@@ -39,7 +39,7 @@
                     <p class="text-gray-600 mb-4">{{ Str::limit($form->description, 150) }}</p>
                     <div class="flex justify-between items-center">
                         <span class="text-sm text-gray-500">
-                            {{ $form->questions->count() }} pergunta(s)
+                            {{ $form->getQuestionsCount() }} pergunta(s)
                         </span>
                         <a href="{{ route('forms.show', $form) }}"
                             class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">

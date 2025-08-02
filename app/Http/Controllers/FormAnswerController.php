@@ -1,84 +1,79 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreFormAnswerRequest;
 use App\Models\Form;
-use App\Models\FormResponse;
-use App\Models\ResponseAnswer;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
+use App\Repositories\Contracts\FormRepositoryInterface;
+use App\Services\FormResponseService;
+use App\Services\FormValidationService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
 
+/**
+ * Controller for handling form answers.
+ *
+ * Following Clean Code and SOLID principles:
+ * - SRP: Only handles HTTP requests/responses for form answers
+ * - DIP: Depends on abstractions (interfaces) not concretions
+ * - OCP: Open for extension, closed for modification
+ */
 class FormAnswerController extends Controller
 {
-    public function index()
+    public function __construct(
+        private readonly FormRepositoryInterface $formRepository,
+        private readonly FormResponseService $responseService,
+        private readonly FormValidationService $validationService,
+    ) {
+    }
+
+    /**
+     * Display a listing of active forms.
+     */
+    public function index(): View
     {
-        $forms = Form::where('status', 'ativo')
-            ->with(['questions.alternatives'])
-            ->get();
+        $forms = $this->formRepository->getActiveFormsWithQuestions();
 
         return view('forms.index', compact('forms'));
     }
 
-    public function show(Form $form)
+    /**
+     * Show a specific form for answering.
+     */
+    public function show(Form $form): View
     {
-        if ('ativo' !== $form->status) {
-            abort(404, 'Formulário não está ativo.');
-        }
+        $this->ensureFormIsAvailable($form);
 
         $form->load(['questions.alternatives']);
 
         return view('forms.show', compact('form'));
     }
 
-    public function store(Request $request, Form $form)
+    /**
+     * Store a form response.
+     */
+    public function store(StoreFormAnswerRequest $request, Form $form): RedirectResponse
     {
-        if ('ativo' !== $form->status) {
+        $this->ensureFormIsAvailable($form);
+
+        $this->responseService->submitResponse($form, $request->validated());
+
+        return redirect()
+            ->route('forms.index')
+            ->with('success', 'Formulário respondido com sucesso!');
+    }
+
+    /**
+     * Ensure the form is available for answering.
+     *
+     * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
+     */
+    private function ensureFormIsAvailable(Form $form): void
+    {
+        if (!$this->validationService->isFormAvailable($form)) {
             abort(404, 'Formulário não está ativo.');
         }
-
-        $form->load(['questions.alternatives']);
-
-        // Validate that all questions are answered
-        $rules = [];
-        foreach ($form->questions as $question) {
-            $rules["answers.{$question->id}"] = 'required|exists:alternatives,id';
-        }
-
-        try {
-            $validated = $request->validate($rules);
-        } catch (ValidationException $e) {
-            return back()->withErrors($e->errors())->withInput();
-        }
-
-        DB::transaction(function () use ($form, $validated) {
-            // Create form response
-            $formResponse = FormResponse::create([
-                'form_id'      => $form->id,
-                'user_id'      => Auth::id(),
-                'submitted_at' => now(),
-                'form_data'    => [
-                    'title'       => $form->title,
-                    'description' => $form->description,
-                ],
-            ]);
-
-            // Create response answers
-            foreach ($validated['answers'] as $questionId => $alternativeId) {
-                $question    = $form->questions->find($questionId);
-                $alternative = $question->alternatives->find($alternativeId);
-
-                ResponseAnswer::create([
-                    'form_response_id' => $formResponse->id,
-                    'question_text'    => $question->text,
-                    'alternative_text' => $alternative->text,
-                    'is_correct'       => $alternative->is_correct,
-                ]);
-            }
-        });
-
-        return redirect()->route('forms.index')
-            ->with('success', 'Formulário respondido com sucesso!');
     }
 }
