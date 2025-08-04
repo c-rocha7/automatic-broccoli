@@ -114,7 +114,7 @@ class FormResponseService
      *
      * @throws \Exception If alternative not found
      */
-    private function findAlternative(Question $question, int $alternativeId): Alternative
+    private function findAlternative(Question $question, string $alternativeId): Alternative
     {
         $alternative = $question->alternatives->find($alternativeId);
 
